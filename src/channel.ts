@@ -457,10 +457,11 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
   },
   outbound: {
     // 通用 send 方法，兼容定时任务调用
-    send: async (params: { to?: string; text?: string; accountId?: string; message?: string; replyTo?: string }) => {
-      const { to, text, accountId, replyTo, message } = params;
-      const msgText = text || message || "";
-      console.log(`[QQ][outbound.send] called with to="${to}", text="${String(msgText).substring(0, 50)}...", accountId="${accountId}"`);
+    send: async (params: any) => {
+      console.log(`[QQ][outbound.send] raw params:`, JSON.stringify(params));
+      const { to, text, accountId, replyTo, message, content } = params;
+      const msgText = text || message || content || "";
+      console.log(`[QQ][outbound.send] parsed to="${to}", text="${String(msgText).substring(0, 100)}...", accountId="${accountId}"`);
       return qqChannel.outbound?.sendText?.({ to, text: msgText, accountId, replyTo });
     },
     sendText: async ({ to, text, accountId, replyTo }) => {
