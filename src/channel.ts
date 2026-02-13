@@ -457,12 +457,14 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
   },
   outbound: {
     sendText: async ({ to, text, accountId, replyTo }) => {
+        console.log(`[QQ][outbound.sendText] called with to="${to}", text="${String(text).substring(0, 50)}...", accountId="${accountId}"`);
         if (!to || to === "heartbeat") return { channel: "qq", sent: true };
         const client = getClientForAccount(accountId || DEFAULT_ACCOUNT_ID);
         if (!client) return { channel: "qq", sent: false, error: "Client not connected" };
         try {
             // 修正点：在解析前先进行递归清洗，确保 to 的格式正确
             const target = parseTarget(to);
+            console.log(`[QQ][outbound.sendText] parsed target:`, target);
             const chunks = splitMessage(text, 4000);
             for (let i = 0; i < chunks.length; i++) {
                 let message: OneBotMessage | string = chunks[i];
