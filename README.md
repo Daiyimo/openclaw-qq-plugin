@@ -60,6 +60,8 @@ cd openclaw/extensions
 # 克隆仓库
 git clone https://gh-proxy.com/https://github.com/Daiyimo/openclaw-napcat.git qq
 # 进入qq插件目录
+cd qq
+# 下载pnpm 如果有就不用执行
 npm install -g pnpm
 # 安装qq
 pnpm install qq
