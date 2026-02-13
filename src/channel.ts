@@ -456,6 +456,13 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
     logoutAccount: async () => ({ loggedOut: true, cleared: true })
   },
   outbound: {
+    // 通用 send 方法，兼容定时任务调用
+    send: async (params: { to?: string; text?: string; accountId?: string; message?: string; replyTo?: string }) => {
+      const { to, text, accountId, replyTo, message } = params;
+      const msgText = text || message || "";
+      console.log(`[QQ][outbound.send] called with to="${to}", text="${String(msgText).substring(0, 50)}...", accountId="${accountId}"`);
+      return qqChannel.outbound?.sendText?.({ to, text: msgText, accountId, replyTo });
+    },
     sendText: async ({ to, text, accountId, replyTo }) => {
         console.log(`[QQ][outbound.sendText] called with to="${to}", text="${String(text).substring(0, 50)}...", accountId="${accountId}"`);
         if (!to || to === "heartbeat") return { channel: "qq", sent: true };
