@@ -182,8 +182,8 @@ export class OneBotClient extends EventEmitter {
   }
 
   // --- Guild (Channel) Extension APIs ---
-  sendGuildChannelMsg(guildId: string, channelId: string, message: OneBotMessage | string) {
-    this.sendWs("send_guild_channel_msg", { guild_id: guildId, channel_id: channelId, message });
+  async sendGuildChannelMsg(guildId: string, channelId: string, message: OneBotMessage | string) {
+    await this.sendAction("send_guild_channel_msg", { guild_id: guildId, channel_id: channelId, message });
   }
 
   async getGuildList(): Promise<any[]> {
@@ -263,7 +263,16 @@ export class OneBotClient extends EventEmitter {
     }
     const activeWs = this.getActiveWs();
     console.log(`[QQ][sendAction] trying WS: forwardWs=${this.ws?.readyState}, reverseWs=${this.reverseWs?.readyState}, active=${!!activeWs}`);
-    this.sendWs(action, params);
+    if (!activeWs) {
+      throw new Error("No WebSocket connection available");
+    }
+    try {
+      activeWs.send(JSON.stringify({ action, params }));
+      console.log(`[QQ][sendAction] WS success: ${action}`);
+    } catch (err: any) {
+      console.error(`[QQ][sendAction] WS failed for ${action}:`, err.message);
+      throw err;
+    }
   }
 
   private async sendViaHttp(action: string, params: any): Promise<any> {
