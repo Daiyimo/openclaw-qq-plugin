@@ -159,7 +159,7 @@ async function dispatchMessage(client: OneBotClient, target: ParsedTarget, messa
       await client.sendGroupMsg(target.groupId!, message);
       break;
     case "guild":
-      client.sendGuildChannelMsg(target.guildId!, target.channelId!, message);
+      await client.sendGuildChannelMsg(target.guildId!, target.channelId!, message);
       break;
     case "private":
       await client.sendPrivateMsg(target.userId!, message);
