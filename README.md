@@ -194,10 +194,10 @@ openclaw setup qq
     ```bash
     # 发送私聊
     openclaw send qq 12345678 "你好，这是测试消息"
-
+    
     # 发送群聊 (使用 group: 前缀)
     openclaw send qq group:88888888 "大家好"
-
+    
     # 发送频道消息
     openclaw send qq guild:GUILD_ID:CHANNEL_ID "频道消息"
     ```
@@ -291,6 +291,45 @@ A: 将 `enableTTS` 设为 `true`。注意：这取决于 OneBot 服务端是否�
 ---
 
 ## 更新日志
+
+### v1.3.1 - 定时任务消息回传修复 (2026-02-14)
+
+修复定时任务能正常获取返回值但无法回传群组消息的问题。
+
+#### 问题原因
+
+异步消息发送没有正确等待完成就返回成功状态，导致消息实际未发送完成。
+
+#### 涉及文件
+
+| 文件 | 变更类型 | 说明 |
+| :--- | :--- | :--- |
+| `src/channel.ts` | 修复 | guild 消息发送添加 await |
+| `src/client.ts` | 修复 | sendGuildChannelMsg 改为 async 并使用 sendAction 统一方法 |
+| `src/client.ts` | 修复 | WebSocket 发送添加错误处理和日志 |
+
+#### 变更详情
+
+1. **channel.ts:162** - guild 消息发送添加 await
+   ```diff
+   - client.sendGuildChannelMsg(target.guildId!, target.channelId!, message);
+   + await client.sendGuildChannelMsg(target.guildId!, target.channelId!, message);
+   ```
+
+2. **client.ts:185-187** - sendGuildChannelMsg 改为 async
+   ```diff
+   - sendGuildChannelMsg(guildId: string, channelId: string, message: OneBotMessage | string) {
+   -   this.sendWs("send_guild_channel_msg", { guild_id: guildId, channel_id: channelId, message });
+   - }
+   + async sendGuildChannelMsg(guildId: string, channelId: string, message: OneBotMessage | string) {
+   +   await this.sendAction("send_guild_channel_msg", { guild_id: guildId, channel_id: channelId, message });
+   + }
+   ```
+
+3. **client.ts:266** - WebSocket 发送添加错误处理
+   - 添加了 activeWs 可用性检查
+   - 添加了发送成功/失败日志
+   - 发送失败时正确抛出异常
 
 ### v1.3.0 - NapCat API 深度集成 (2026-02-12)
 
