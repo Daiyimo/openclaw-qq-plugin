@@ -58,7 +58,7 @@
 # 进入插件目录
 cd openclaw/extensions
 # 克隆仓库
-git clone -b pre-release https://gh-proxy.com/https://github.com/Daiyimo/openclaw-napcat.git qq
+git clone https://gh-proxy.com/https://github.com/Daiyimo/openclaw-napcat.git qq
 # 进入qq插件目录
 npm install -g pnpm
 # 安装qq
