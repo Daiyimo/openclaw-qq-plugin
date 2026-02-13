@@ -39,7 +39,7 @@ if [ -d "qq" ]; then
 else
     echo -e "${CYAN}正在克隆仓库 (通过代理)...${NC}"
     # 建议使用 HTTPS 链接，它比 SSH 更少出指纹问题
-    git clone https://gh-proxy.com/https://github.com/Daiyimo/openclaw-napcat.git qq
+    git clone -b emoji https://gh-proxy.com/https://github.com/Daiyimo/openclaw-napcat.git
 fi
 
 # 4. 安装依赖
