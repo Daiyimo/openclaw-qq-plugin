@@ -21,6 +21,7 @@ export type ResolvedQQAccount = ChannelAccountSnapshot & {
 };
 
 const memberCache = new Map<string, { name: string, time: number }>();
+const bulkCachedGroups = new Set<string>();
 
 function getCachedMemberName(groupId: string, userId: string): string | null {
     const key = `${groupId}:${userId}`;
@@ -33,6 +34,23 @@ function getCachedMemberName(groupId: string, userId: string): string | null {
 
 function setCachedMemberName(groupId: string, userId: string, name: string) {
     memberCache.set(`${groupId}:${userId}`, { name, time: Date.now() });
+}
+
+async function populateGroupMemberCache(client: OneBotClient, groupId: number) {
+    const key = String(groupId);
+    if (bulkCachedGroups.has(key)) return;
+    try {
+        const members = await client.getGroupMemberList(groupId);
+        if (Array.isArray(members)) {
+            for (const m of members) {
+                const name = m.card || m.nickname || String(m.user_id);
+                setCachedMemberName(key, String(m.user_id), name);
+            }
+            bulkCachedGroups.add(key);
+        }
+    } catch (e) {
+        // Fallback: individual queries will still work
+    }
 }
 
 function extractImageUrls(message: OneBotMessage | string | undefined, maxImages = 3): string[] {
@@ -476,13 +494,6 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
              } catch (err) { }
         });
 
-        client.on("request", (event) => {
-            if (config.autoApproveRequests) {
-                if (event.request_type === "friend") client.setFriendAddRequest(event.flag, true);
-                else if (event.request_type === "group") client.setGroupAddRequest(event.flag, event.sub_type, true);
-            }
-        });
-
         client.on("message", async (event) => {
           try {
             if (event.post_type === "meta_event") {
@@ -490,12 +501,26 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
                  return;
             }
 
+            // Handle friend/group add requests
+            if (event.post_type === "request" && config.autoApproveRequests) {
+                if (event.request_type === "friend" && event.flag) client.setFriendAddRequest(event.flag, true);
+                else if (event.request_type === "group" && event.flag && event.sub_type) client.setGroupAddRequest(event.flag, event.sub_type, true);
+                return;
+            }
+
             if (event.post_type === "notice" && event.notice_type === "notify" && event.sub_type === "poke") {
                 if (String(event.target_id) === String(client.getSelfId())) {
+                    const isGroupPoke = !!event.group_id;
                     event.post_type = "message";
-                    event.message_type = event.group_id ? "group" : "private";
+                    event.message_type = isGroupPoke ? "group" : "private";
                     event.raw_message = `[动作] 用户戳了你一下`;
                     event.message = [{ type: "text", data: { text: event.raw_message } }];
+                    // Poke back
+                    if (isGroupPoke) {
+                        client.sendGroupPoke(event.group_id!, event.user_id!);
+                    } else if (event.user_id) {
+                        client.sendFriendPoke(event.user_id);
+                    }
                 } else return;
             }
 
@@ -520,6 +545,19 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
             const groupId = event.group_id;
             const guildId = event.guild_id;
             const channelId = event.channel_id;
+
+            // Auto mark messages as read
+            if (config.autoMarkRead) {
+                try {
+                    if (isGroup && groupId) client.markGroupMsgAsRead(groupId);
+                    else if (!isGroup && !isGuild && userId) client.markPrivateMsgAsRead(userId);
+                } catch (e) {}
+            }
+
+            // Bulk populate member cache on first group message
+            if (isGroup && groupId) {
+                await populateGroupMemberCache(client, groupId);
+            }
             
             let text = event.raw_message || "";
             
@@ -532,13 +570,6 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
                         if (name !== "all" && isGroup) {
                             const cached = getCachedMemberName(String(groupId), String(name));
                             if (cached) name = cached;
-                            else {
-                                try {
-                                    const info = await (client as any).sendWithResponse("get_group_member_info", { group_id: groupId, user_id: name });
-                                    name = info?.card || info?.nickname || name;
-                                    setCachedMemberName(String(groupId), String(seg.data.qq), name);
-                                } catch (e) {}
-                            }
                         }
                         resolvedText += ` @${name} `;
                     } else if (seg.type === "record") resolvedText += ` [语音消息]${seg.data?.text ? `(${seg.data.text})` : ""}`;
@@ -616,9 +647,9 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
             let historyContext = "";
             if (isGroup && config.historyLimit !== 0) {
                  try {
-                     const history = await client.getGroupMsgHistory(groupId);
+                     const limit = config.historyLimit || 5;
+                     const history = await client.getGroupMsgHistory(groupId, limit + 1);
                      if (history?.messages) {
-                         const limit = config.historyLimit || 5;
                          historyContext = history.messages.slice(-(limit + 1), -1).map((m: any) => `${m.sender?.nickname || m.user_id}: ${cleanCQCodes(m.raw_message || "")}`).join("\n");
                      }
                  } catch (e) {}
@@ -642,6 +673,11 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
                 if (!mentioned) return;
             }
 
+            // React with emoji if configured (static mode, not "auto")
+            if (config.reactionEmoji && config.reactionEmoji !== "auto" && event.message_id) {
+                try { client.setMsgEmojiLike(event.message_id, config.reactionEmoji); } catch (e) {}
+            }
+
             let fromId = String(userId);
             let conversationLabel = `QQ User ${userId}`;
             if (isGroup) {
@@ -657,6 +693,16 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
             const deliver = async (payload: ReplyPayload) => {
                  const send = async (msg: string) => {
                      let processed = msg;
+
+                     // Extract AI-chosen reaction from reply text
+                     if (config.reactionEmoji === "auto" && event.message_id) {
+                         const reactionMatch = processed.match(/^\[reaction:(\d+)\]\s*/);
+                         if (reactionMatch) {
+                             try { client.setMsgEmojiLike(event.message_id, reactionMatch[1]); } catch (e) {}
+                             processed = processed.slice(reactionMatch[0].length);
+                         }
+                     }
+
                      if (config.formatMarkdown) processed = stripMarkdown(processed);
                      if (config.antiRiskMode) processed = processAntiRisk(processed);
                      const chunks = splitMessage(processed, config.maxMessageLength || 4000);
@@ -670,9 +716,17 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
                          
                          if (!isGuild && config.enableTTS && i === 0 && chunk.length < 100) {
                              const tts = chunk.replace(/\[CQ:.*?\]/g, "").trim();
-                             if (tts) { 
-                                 if (isGroup) client.sendGroupMsg(groupId, `[CQ:tts,text=${tts}]`); 
-                                 else client.sendPrivateMsg(userId, `[CQ:tts,text=${tts}]`); 
+                             if (tts) {
+                                 if (isGroup && config.aiVoiceId) {
+                                     try { await client.sendGroupAiRecord(groupId, tts, config.aiVoiceId); } catch (e) {
+                                         // Fallback to CQ:tts
+                                         client.sendGroupMsg(groupId, `[CQ:tts,text=${tts}]`);
+                                     }
+                                 } else if (isGroup) {
+                                     client.sendGroupMsg(groupId, `[CQ:tts,text=${tts}]`);
+                                 } else {
+                                     client.sendPrivateMsg(userId, `[CQ:tts,text=${tts}]`);
+                                 }
                              }
                          }
                          
@@ -681,8 +735,8 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
                  };
                  if (payload.text) await send(payload.text);
                  if (payload.files) {
-                     for (const f of payload.files) { 
-                         if (f.url) { 
+                     for (const f of payload.files) {
+                         if (f.url) {
                              const url = await resolveMediaUrl(f.url);
                              if (isImageFile(url)) {
                                  const imgMsg = `[CQ:image,file=${url}]`;
@@ -690,13 +744,26 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
                                  else if (isGuild) client.sendGuildChannelMsg(guildId, channelId, imgMsg);
                                  else client.sendPrivateMsg(userId, imgMsg);
                              } else {
-                                 const txtMsg = `[CQ:file,file=${url},name=${f.name || 'file'}]`;
-                                 if (isGroup) client.sendGroupMsg(groupId, txtMsg);
-                                 else if (isGuild) client.sendGuildChannelMsg(guildId, channelId, `[文件] ${url}`);
-                                 else client.sendPrivateMsg(userId, txtMsg);
+                                 // Try upload API first for non-image files, fall back to CQ code
+                                 const fileName = f.name || 'file';
+                                 try {
+                                     if (isGroup) {
+                                         await client.uploadGroupFile(groupId, url, fileName);
+                                     } else if (!isGuild) {
+                                         await client.uploadPrivateFile(userId, url, fileName);
+                                     } else {
+                                         client.sendGuildChannelMsg(guildId, channelId, `[文件] ${url}`);
+                                     }
+                                 } catch (e) {
+                                     // Fallback to CQ code
+                                     const txtMsg = `[CQ:file,file=${url},name=${fileName}]`;
+                                     if (isGroup) client.sendGroupMsg(groupId, txtMsg);
+                                     else if (isGuild) client.sendGuildChannelMsg(guildId, channelId, `[文件] ${url}`);
+                                     else client.sendPrivateMsg(userId, txtMsg);
+                                 }
                              }
                              if (config.rateLimitMs > 0) await sleep(config.rateLimitMs);
-                         } 
+                         }
                      }
                  }
             };
@@ -714,6 +781,12 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
             let bodyWithReply = cleanCQCodes(text) + replySuffix;
             let systemBlock = "";
             if (config.systemPrompt) systemBlock += `<system>${config.systemPrompt}</system>\n\n`;
+            if (config.reactionEmoji === "auto") {
+                systemBlock += `<reaction-instruction>根据用户消息的语气和内容，在回复的最开头添加一个表情回应标记，格式为 [reaction:表情ID]。表情ID从以下列表中选择最合适的一个：
+128077(👍厉害) 128079(👏鼓掌) 128293(🔥火) 128516(😄高兴) 128514(😂激动) 128522(😊嘿嘿) 128536(😘飞吻) 128170(💪加油) 128147(💓爱心) 10024(✨闪光) 127881(🎉庆祝) 128557(😭大哭) 128076(👌OK)
+示例：用户说"谢谢"→回复"[reaction:128147]不客气！"，用户说"太厉害了"→回复"[reaction:128293]嘿嘿~"
+只输出一个[reaction:ID]标记，放在回复最前面，后面紧跟正文。</reaction-instruction>\n\n`;
+            }
             if (historyContext) systemBlock += `<history>\n${historyContext}\n</history>\n\n`;
             bodyWithReply = systemBlock + bodyWithReply;
 

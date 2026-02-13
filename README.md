@@ -1,6 +1,5 @@
 
-OpenClawd 是一个多功能代理。下面的聊天演示仅展示了最基础的功能。
-# OpenClaw QQ 插件 (OneBot v11)
+# OpenClaw-Napcat 插件 (OneBot v11)
 
 本插件通过 OneBot v11 协议（WebSocket）为 [OpenClaw](https://github.com/openclaw/openclaw) 添加全功能的 QQ 频道支持。它不仅支持基础聊天，还集成了群管、频道、多模态交互和生产级风控能力。
 
@@ -27,7 +26,7 @@ OpenClawd 是一个多功能代理。下面的聊天演示仅展示了最基础�
 
 ### 🎭 丰富的交互体验
 *   **戳一戳 (Poke)**：当用户"戳一戳"机器人时，AI 会感知到并做出有趣的回应。支持群聊和私聊双向戳一戳。
-*   **表情回应 (Reaction)**：收到触发消息时，自动对消息添加表情回应。支持固定表情（如 `"128077"` 竖大拇指）和 `"auto"` 模式（AI 根据消息内容动态选择最合适的表情）。
+*   **表情回应 (Reaction)**：收到触发消息时，自动对消息添加表情回应（如竖起大拇指），提升交互体验。
 *   **已读标记 (Mark Read)**：自动标记消息为已读，避免未读消息堆积。
 *   **AI 语音 (AI Voice)**：利用 NapCat 原生 AI 语音 API，支持丰富的音色角色，比传统 TTS 更自然。
 *   **拟人化回复**：
@@ -47,7 +46,7 @@ OpenClawd 是一个多功能代理。下面的聊天演示仅展示了最基础�
 2.  **OneBot v11 服务端**：你需要一个运行中的 OneBot v11 实现。
     *   推荐：**[NapCat (Docker)](https://github.com/NapCatQQ/NapCat-Docker)** (4.16.0+) 或 **Lagrange**。
     *   **重要配置**：请务必在 OneBot 配置中将 `message_post_format` 设置为 `array`（数组格式），否则无法解析多媒体消息。
-    *   网络：确保开启了正向 WebSocket 服务（通常端口为 3001）。
+    *   网络：确保开启了正向 WebSocket 服务（通常端口为 3001）以及http-server（通常端口为 3000）。
 
 ---
 
@@ -59,7 +58,7 @@ OpenClawd 是一个多功能代理。下面的聊天演示仅展示了最基础�
 # 进入插件目录
 cd openclaw/extensions
 # 克隆仓库
-git clone https://github.com/Daiyimo/openclaw-qq-plugin.git qq
+git clone -b pre-release https://gh-proxy.com/https://github.com/Daiyimo/openclaw-napcat.git qq
 # 进入qq插件目录
 npm install -g pnpm
 # 安装qq
@@ -112,7 +111,7 @@ openclaw setup qq
       "formatMarkdown": true,
       "antiRiskMode": false,
       "maxMessageLength": 4000,
-      "reactionEmoji": "auto",
+      "reactionEmoji": "",
       "autoMarkRead": false,
       "aiVoiceId": ""
     }
@@ -145,7 +144,7 @@ openclaw setup qq
 | `formatMarkdown` | boolean | `false` | 是否将 Markdown 表格/列表转换为易读的纯文本排版。 |
 | `antiRiskMode` | boolean | `false` | 是否开启风控规避（如给 URL 加空格）。 |
 | `maxMessageLength` | number | `4000` | 单条消息最大长度，超过将自动分片发送。 |
-| `reactionEmoji` | string | - | 表情回应模式。填表情 ID（如 `"128077"`）为固定表情；填 `"auto"` 由 AI 动态选择表情；留空不启用。 |
+| `reactionEmoji` | string | - | 收到触发消息时自动回应的表情 ID（如 `"128077"` 为竖大拇指），留空不启用。 |
 | `autoMarkRead` | boolean | `false` | 是否自动标记消息为已读，防止未读消息堆积。 |
 | `aiVoiceId` | string | - | NapCat AI 语音角色 ID，当 `enableTTS` 开启时优先使用 AI 语音 API 代替 CQ:tts。 |
 
@@ -299,7 +298,7 @@ A: 将 `enableTTS` 设为 `true`。注意：这取决于 OneBot 服务端是否�
 
 | 功能 | 说明 |
 | :--- | :--- |
-| **表情回应** | 支持固定表情和 AI 动态选择两种模式（`set_msg_emoji_like`），通过 `reactionEmoji` 配置。设为 `"auto"` 时 AI 根据消息语气自动选择最合适的表情 |
+| **表情回应** | 收到触发消息时自动添加表情回应（`set_msg_emoji_like`），通过 `reactionEmoji` 配置 |
 | **已读标记** | 自动标记群聊/私聊消息为已读（`mark_group_msg_as_read` / `mark_private_msg_as_read`），通过 `autoMarkRead` 配置 |
 | **AI 语音** | 利用 NapCat 原生 `send_group_ai_record` API 发送 AI 语音，音色更丰富，通过 `aiVoiceId` 配置 |
 | **私聊戳一戳** | 新增 `friend_poke` 支持，私聊中收到戳一戳也会回应 |
@@ -312,7 +311,6 @@ A: 将 `enableTTS` 设为 `true`。注意：这取决于 OneBot 服务端是否�
 - `OneBotMessageSegment` 类型补全：新增 `record`、`video`、`json`、`forward`、`file`、`face` 等消息段
 - `getGroupMsgHistory` 新增 `count` 参数，按需获取历史消息条数，减少数据传输
 - 好友/入群请求处理从死代码修复为正确的事件分发
-- `reactionEmoji` 新增 `"auto"` 模式：通过系统提示词引导 AI 在回复中输出 `[reaction:ID]` 标记，插件自动提取并发送表情回应，标记从实际消息中剥离
 
 #### 涉及文件
 
@@ -321,7 +319,7 @@ A: 将 `enableTTS` 设为 `true`。注意：这取决于 OneBot 服务端是否�
 | `src/types.ts` | 增强 | 补全 OneBotEvent 和 OneBotMessageSegment 类型定义 |
 | `src/config.ts` | 新增字段 | 新增 `reactionEmoji`、`autoMarkRead`、`aiVoiceId` 配置项 |
 | `src/client.ts` | 新增方法 | 新增 7 个 NapCat API 方法，优化 `getGroupMsgHistory` 参数 |
-| `src/channel.ts` | 集成 | 表情回应（含 AI 动态选择）、已读标记、AI 语音、批量成员缓存、文件上传、私聊戳一戳 |
+| `src/channel.ts` | 集成 | 表情回应、已读标记、AI 语音、批量成员缓存、文件上传、私聊戳一戳 |
 | `README.md` | 文档 | 同步文档更新 |
 | `package.json` | 版本 | 更新为 1.3.0 |
 
@@ -329,7 +327,7 @@ A: 将 `enableTTS` 设为 `true`。注意：这取决于 OneBot 服务端是否�
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `reactionEmoji` | string | - | 表情回应模式：填具体 ID 为固定表情，填 `"auto"` 由 AI 动态选择，留空不启用 |
+| `reactionEmoji` | string | - | 表情回应 ID（如 `"128077"`），留空不启用 |
 | `autoMarkRead` | boolean | `false` | 自动标记消息为已读 |
 | `aiVoiceId` | string | - | NapCat AI 语音角色 ID，配合 `enableTTS` 使用 |
 
